@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>六十四卦记忆刷题工具</title>
+<style>
+*{box-sizing:border-box;font-family:system-ui, sans-serif;}
+body{max-width:720px;margin:20px auto;padding:0 16px;background:#f7f7f7;}
+.box{background:#fff;padding:20px;border-radius:10px;margin-bottom:16px;box-shadow:0 1px 4px #0002;}
+h2{margin-top:0;color:#222;}
+button{padding:8px 14px;margin:4px;border:none;border-radius:6px;background:#3671d9;color:#fff;font-size:14px;cursor:pointer;}
+button.secondary{background:#777;}
+button.warn{background:#d64045;}
+input{padding:8px 10px;font-size:16px;width:100%;max-width:400px;border:1px solid #ccc;border-radius:6px;margin:8px 0;}
+.question{font-size:20px;margin:12px 0;padding:10px;background:#f0f6ff;border-radius:8px;}
+.yao{font-size:28px;letter-spacing:6px;margin:10px 0;line-height:1.6;}
+.correct{color:#090;font-weight:bold;}
+.wrong{color:#d00;font-weight:bold;}
+.grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(130px,1fr));gap:6px;margin:10px 0;}
+.tag{padding:4px 6px;background:#eee;border-radius:4px;font-size:13px;cursor:pointer;text-align:center;}
+.tag.mastered{background:#b8e9b8;}
+#selfCheck{font-size:13px;color:#666;margin-top:8px;}
+</style>
+</head>
+<body>
+<div class="box">
+<h2>六十四卦记忆刷题</h2>
+<div>
+<button onclick="setMode(1)">模式1｜卦名 → 猜上下卦</button>
+<button onclick="setMode(2)">模式2｜卦符号 → 猜卦名</button>
+<button onclick="setMode(3)">模式3｜爻画⚊⚋ → 猜卦名</button>
+</div>
+<div style="margin:8px 0;">
+<label><input type="checkbox" id="onlyMastered"> 仅使用【已掌握】的卦出题复习</label>
+</div>
+
+<div class="question" id="qArea">点击上方模式开始出题</div>
+<div>
+<input id="ansInput" placeholder="在这里输入你的答案" onkeydown="if(event.key==='Enter')submitAnswer()">
+<button onclick="submitAnswer()">提交答案</button>
+<button class="secondary" onclick="nextQ()">下一题</button>
+</div>
+<div id="feedback"></div>
+</div>
+
+<div class="box">
+<h3>标记已掌握的卦</h3>
+<div><button onclick="togglePanel()">显示/隐藏全部卦列表</button></div>
+<div id="allList" class="grid" style="display:none;margin-top:10px;"></div>
+<div style="margin-top:10px;">
+<button onclick="clearMastered()" class="warn">清空全部已掌握标记</button>
+</div>
+</div>
+
+<div class="box">
+<h3>已掌握列表</h3>
+<div id="masteredShow"></div>
+<div id="selfCheck"></div>
+</div>
+
+<script>
+// 单卦页面三爻（从上到下书写）
+// 规则：单卦从下往上三爻反转得到页面从上到下
+const TRIGRAM_TOP_DOWN = {
+    "乾":"⚊⚊⚊",  // 阳阳阳
+    "坤":"⚋⚋⚋",  // 阴阴阴
+    "震":"⚋⚋⚊",  // 从下往上阳阴阴 → 反转
+    "巽":"⚊⚊⚋",  // 从下往上阴阳阳 → 反转
+    "坎":"⚋⚊⚋",  // 阴阳阴
+    "离":"⚊⚋⚊",  // 阳阴阳
+    "艮":"⚊⚋⚋",  // 从下往上阴阴阳 → 反转
+    "兑":"⚋⚊⚊",  // 从下往上阳阳阴 → 反转
+};
+
+// 64卦数据：卦名,上卦,下卦,unicode卦符号,页面从上到下六爻（第6位=初爻）
+// 已通过脚本校验：64卦符号唯一、爻画与上下卦严格对应
+const guaData = [
+//乾宫
+["乾为天","乾","乾","䷀","⚊⚊⚊⚊⚊⚊"],
+["天风姤","乾","巽","䷫","⚊⚊⚊⚊⚊⚋"],
+["天山遁","乾","艮","䷠","⚊⚊⚊⚊⚋⚋"],
+["天地否","乾","坤","䷋","⚊⚊⚊⚋⚋⚋"],
+["风地观","巽","坤","䷓","⚊⚊⚋⚋⚋⚋"],
+["山地剥","艮","坤","䷖","⚊⚋⚋⚋⚋⚋"],
+["火地晋","离","坤","䷢","⚊⚋⚊⚋⚋⚋"],
+["火天大有","离","乾","䷍","⚊⚋⚊⚊⚊⚊"],
+//坎宫
+["坎为水","坎","坎","䷜","⚋⚊⚋⚋⚊⚋"],
+["水泽节","坎","兑","䷻","⚋⚊⚋⚋⚊⚊"],
+["水雷屯","坎","震","䷂","⚋⚊⚋⚋⚋⚊"],
+["水火既济","坎","离","䷾","⚋⚊⚋⚊⚋⚊"],
+["泽火革","兑","离","䷰","⚋⚊⚊⚊⚋⚊"],
+["雷火丰","震","离","䷶","⚋⚋⚊⚊⚋⚊"],
+["地火明夷","坤","离","䷣","⚋⚋⚋⚊⚋⚊"],
+["地水师","坤","坎","䷆","⚋⚋⚋⚋⚊⚋"],
+//艮宫
+["艮为山","艮","艮","䷳","⚊⚋⚋⚊⚋⚋"],
+["山火贲","艮","离","䷕","⚊⚋⚋⚊⚋⚊"],
+["山天大畜","艮","乾","䷙","⚊⚋⚋⚊⚊⚊"],
+["山泽损","艮","兑","䷨","⚊⚋⚋⚋⚊⚊"],
+["火泽睽","离","兑","䷥","⚊⚋⚊⚋⚊⚊"],
+["天泽履","乾","兑","䷉","⚊⚊⚊⚋⚊⚊"],
+["风泽中孚","巽","兑","䷼","⚊⚊⚋⚋⚊⚊"],
+["风山渐","巽","艮","䷴","⚊⚊⚋⚊⚋⚋"],
+//震宫
+["震为雷","震","震","䷲","⚋⚋⚊⚋⚋⚊"],
+["雷地豫","震","坤","䷏","⚋⚋⚊⚋⚋⚋"],
+["雷水解","震","坎","䷧","⚋⚋⚊⚋⚊⚋"],
+["雷风恒","震","巽","䷟","⚋⚋⚊⚊⚊⚋"],
+["地风升","坤","巽","䷭","⚋⚋⚋⚊⚊⚋"],
+["水风井","坎","巽","䷯","⚋⚊⚋⚊⚊⚋"],
+["泽风大过","兑","巽","䷛","⚋⚊⚊⚊⚊⚋"],
+["泽雷随","兑","震","䷐","⚋⚊⚊⚋⚋⚊"],
+//巽宫
+["巽为风","巽","巽","䷸","⚊⚊⚋⚊⚊⚋"],
+["风天小畜","巽","乾","䷈","⚊⚊⚋⚊⚊⚊"],
+["风火家人","巽","离","䷤","⚊⚊⚋⚊⚋⚊"],
+["风雷益","巽","震","䷩","⚊⚊⚋⚋⚋⚊"],
+["天雷无妄","乾","震","䷘","⚊⚊⚊⚋⚋⚊"],
+["火雷噬嗑","离","震","䷔","⚊⚋⚊⚋⚋⚊"],
+["山雷颐","艮","震","䷚","⚊⚋⚋⚋⚋⚊"],
+["山风蛊","艮","巽","䷑","⚊⚋⚋⚊⚊⚋"],
+//离宫
+["离为火","离","离","䷝","⚊⚋⚊⚊⚋⚊"],
+["火山旅","离","艮","䷷","⚊⚋⚊⚊⚋⚋"],
+["火风鼎","离","巽","䷱","⚊⚋⚊⚊⚊⚋"],
+["火水未济","离","坎","䷿","⚊⚋⚊⚋⚊⚋"],
+["山水蒙","艮","坎","䷃","⚊⚋⚋⚋⚊⚋"],
+["风水涣","巽","坎","䷺","⚊⚊⚋⚋⚊⚋"],
+["天水讼","乾","坎","䷅","⚊⚊⚊⚋⚊⚋"],
+["天火同人","乾","离","䷌","⚊⚊⚊⚊⚋⚊"],
+//坤宫
+["坤为地","坤","坤","䷁","⚋⚋⚋⚋⚋⚋"],
+["地雷复","坤","震","䷗","⚋⚋⚋⚋⚋⚊"],
+["地泽临","坤","兑","䷒","⚋⚋⚋⚋⚊⚊"],
+["地天泰","坤","乾","䷊","⚋⚋⚋⚊⚊⚊"],
+["雷天大壮","震","乾","䷡","⚋⚋⚊⚊⚊⚊"],
+["泽天夬","兑","乾","䷪","⚋⚊⚊⚊⚊⚊"],
+["水天需","坎","乾","䷄","⚋⚊⚋⚊⚊⚊"],
+["水地比","坎","坤","䷇","⚋⚊⚋⚋⚋⚋"],
+//兑宫
+["兑为泽","兑","兑","䷹","⚋⚊⚊⚋⚊⚊"],
+["泽水困","兑","坎","䷮","⚋⚊⚊⚋⚊⚋"],
+["泽地萃","兑","坤","䷬","⚋⚊⚊⚋⚋⚋"],
+["泽山咸","兑","艮","䷞","⚋⚊⚊⚊⚋⚋"],
+["水山蹇","坎","艮","䷦","⚋⚊⚋⚊⚋⚋"],
+["地山谦","坤","艮","䷎","⚋⚋⚋⚊⚋⚋"],
+["雷山小过","震","艮","䷽","⚋⚋⚊⚊⚋⚋"],
+["雷泽归妹","震","兑","䷵","⚋⚋⚊⚋⚊⚊"],
+];
+
+let currentMode = 0;
+let currentItem = null;
+let mastered = new Set();
+
+// ===== 页面加载时数据自检 =====
+function selfCheck(){
+    const errs = [];
+    const symSet = new Set();
+    guaData.forEach(([name,up,down,sym,yao])=>{
+        const expectYao = TRIGRAM_TOP_DOWN[up]+TRIGRAM_TOP_DOWN[down];
+        if(yao !== expectYao) errs.push(`${name}: 爻画${yao}≠应为${expectYao}`);
+        if(yao.length!==6) errs.push(`${name}: 爻画长度不是6`);
+        if(symSet.has(sym)) errs.push(`${name}: 符号${sym}重复`);
+        symSet.add(sym);
+    });
+    const el = document.getElementById('selfCheck');
+    if(errs.length===0){
+        el.innerHTML = `✅ 数据自检通过：${guaData.length}卦，${symSet.size}个唯一符号，爻画全部匹配。爻画字符串规则：上卦三爻+下卦三爻，最后一位=初爻。`;
+    }else{
+        el.innerHTML = `<span style="color:#d00">❌ 数据自检发现${errs.length}处错误：<br>${errs.join('<br>')}</span>`;
+    }
+}
+
+//本地存储
+function loadStorage(){
+    const s = localStorage.getItem('guaMastered');
+    if(s) mastered = new Set(JSON.parse(s));
+    renderMasteredList();
+    renderAllList();
+}
+function saveStorage(){
+    localStorage.setItem('guaMastered', JSON.stringify([...mastered]));
+}
+
+function getPool(){
+    const only = document.getElementById('onlyMastered').checked;
+    if(!only) return guaData;
+    return guaData.filter(x=>mastered.has(x[0]));
+}
+
+function setMode(m){
+    currentMode = m;
+    nextQ();
+}
+
+function nextQ(){
+    const pool = getPool();
+    document.getElementById('feedback').innerHTML = '';
+    document.getElementById('ansInput').value = '';
+    if(pool.length===0){
+        document.getElementById('qArea').innerText = "题库为空！请取消「仅已掌握」或者标记一些卦。";
+        currentItem=null;
+        return;
+    }
+    currentItem = pool[Math.floor(Math.random()*pool.length)];
+    const [gname, up, down, sym, yaoStr] = currentItem;
+    const qDom = document.getElementById('qArea');
+    if(currentMode===1){
+        qDom.innerHTML = `<div>题目：<strong>${gname}</strong></div><div>请输入：上卦 下卦（例：乾 坤）</div>`;
+    }else if(currentMode===2){
+        qDom.innerHTML = `<div>题目｜卦符号：<span style="font-size:26px">${sym}</span></div><div>请输入卦名</div>`;
+    }else if(currentMode===3){
+        // 爻画逐行竖排，从上到下，更像真实卦画
+        const lines = yaoStr.split('').map(y=>`<div style="text-align:center">${y}</div>`).join('');
+        qDom.innerHTML = `<div>题目｜爻画（从上到下，最下面一条是初爻）：</div><div class="yao">${lines}</div><div>请输入卦名</div>`;
+    }
+}
+
+function submitAnswer(){
+    if(!currentItem){alert("请先出题");return;}
+    const [gname, up, down, sym, yaoStr] = currentItem;
+    const userAns = document.getElementById('ansInput').value.trim();
+    const feed = document.getElementById('feedback');
+    if(currentMode===1){
+        const correctAns = `${up} ${down}`;
+        if(userAns === correctAns){
+            feed.innerHTML = `<div class="correct">✅正确！${gname}｜上${up} 下${down} ${sym}</div>`;
+        }else{
+            feed.innerHTML = `<div class="wrong">❌错误。正确：${correctAns}，卦名：${gname}</div>`;
+        }
+    }else{
+        if(userAns === gname){
+            feed.innerHTML = `<div class="correct">✅正确！${gname}｜上${up} 下${down} ${sym}</div>`;
+        }else{
+            feed.innerHTML = `<div class="wrong">❌错误。正确卦名：${gname}（上${up}下${down}）</div>`;
+        }
+    }
+}
+
+function togglePanel(){
+    const el = document.getElementById('allList');
+    el.style.display = el.style.display==='none' ? 'grid':'none';
+}
+
+function renderAllList(){
+    const cont = document.getElementById('allList');
+    cont.innerHTML = '';
+    guaData.forEach(it=>{
+        const name = it[0];
+        const span = document.createElement('span');
+        span.className = 'tag' + (mastered.has(name)?' mastered':'');
+        span.innerText = name;
+        span.title = `上${it[1]}下${it[2]} ${it[3]}`;
+        span.onclick = ()=>{
+            if(mastered.has(name)) mastered.delete(name);
+            else mastered.add(name);
+            saveStorage();
+            renderAllList();
+            renderMasteredList();
+        };
+        cont.appendChild(span);
+    })
+}
+
+function renderMasteredList(){
+    const box = document.getElementById('masteredShow');
+    const arr = [...mastered];
+    if(arr.length===0){
+        box.innerText="暂无已掌握卦，点击上方列表里卦名标记掌握";
+        return;
+    }
+    box.innerText = `已掌握 ${arr.length}/64：` + arr.join("，");
+}
+
+function clearMastered(){
+    if(!confirm("确定清空全部已掌握标记？")) return;
+    mastered.clear();
+    saveStorage();
+    renderAllList();
+    renderMasteredList();
+}
+
+selfCheck();
+loadStorage();
+</script>
+</body>
+</html>
